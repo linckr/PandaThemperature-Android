@@ -191,15 +191,17 @@ $env:JAVA_HOME="C:\Users\linckr\.workbuddy\binaries\jdk\jdk-17.0.20.1+1"
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
 ~~~
 
-第二轮验证结果：**BUILD SUCCESSFUL**（96 个任务，43 执行 / 53 复用，5 分 26 秒）；单元测试 25 项全部通过，0 失败 0 错误。
+第二轮验证结果：**BUILD SUCCESSFUL**（96 个任务；首次完整构建 5 分 26 秒，代码定稿后复核为增量构建 2 分 3 秒）；单元测试 25 项全部通过，0 失败 0 错误。
+
+上表中的哈希对应**代码定稿后最后一次完整构建**的产物，与 `src.zip` 内容同源。因为 APK 含构建时间戳，重新构建后哈希会变化，核对时请以当次构建结果为准。
 
 当前产物：
 
 | 产物 | 路径 | 大小 | SHA-256 |
 |---|---|---|---|
-| Debug APK | `source\app\build\outputs\apk\debug\app-debug.apk` | 22,438,328 B | `1A8DD6749A304E668DCC5CB38099411D5E419ED20C3A769EC3D4C7F53BC28B9A` |
-| Release APK（未签名） | `source\app\build\outputs\apk\release\app-release-unsigned.apk` | 15,716,121 B | `1055D260513F64209EDA36207630B003B23FA98D2115A5ACE6D27FCFC573E74E` |
-| 源码压缩包 | `src.zip` | 9,965,840 B | `33226F7F85AD63D980E121DE39A7E1643723FCC92B406392CCF4B89088ACDBB7` |
+| Debug APK | `source\app\build\outputs\apk\debug\app-debug.apk` | 22,438,328 B | `5DFC138D16A520E65DE726E58BBC5468ECA2418BA024A3712EFC966D39D61B9E` |
+| Release APK（未签名） | `source\app\build\outputs\apk\release\app-release-unsigned.apk` | 15,716,121 B | `BB3401B58C029B248CA17804D5432FBC6A2BA39FCBE0D0B01C5274C68A768BB3` |
+| 源码压缩包 | `src.zip` | 9,965,841 B | `ABBE63F15B6925C848DF25A7AF5BC47ACC4627C090DB82AA2921EDB6EFC976C4` |
 
 签名状态已用 `apksigner verify --print-certs` 实测：
 

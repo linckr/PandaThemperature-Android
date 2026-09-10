@@ -24,6 +24,9 @@ object BleFrameDiagnostics {
     /** 十六进制预览的最大字节数，避免长历史帧刷屏。 */
     private const val MAX_PREVIEW_BYTES = 16
 
+    /** uint16 电压字段占用的字节数。 */
+    private const val VOLTAGE_FIELD_SIZE = 2
+
     /** 通道 -> 上一次已报告的帧长，用于「仅在长度变化时再次报告」。 */
     private val reportedLengths = ConcurrentHashMap<Channel, Int>()
 
@@ -101,7 +104,4 @@ object BleFrameDiagnostics {
         val shown = data.take(MAX_PREVIEW_BYTES).joinToString(" ") { "%02X".format(it) }
         return if (data.size > MAX_PREVIEW_BYTES) "$shown …（共 ${data.size}B）" else shown
     }
-
-    /** uint16 电压字段占用的字节数。 */
-    private const val VOLTAGE_FIELD_SIZE = 2
 }
