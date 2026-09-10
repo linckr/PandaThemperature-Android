@@ -41,8 +41,7 @@ fun DeviceSelectionDialog(
     onDeviceSelected: (BluetoothDevice) -> Unit,
     onConnectByAddress: (String) -> Unit = {},
     onDismiss: () -> Unit,
-    onStartScan: () -> Unit = {}, // 新增：开始扫描回调
-    onSelectEInkPendant: () -> Unit = {}
+    onStartScan: () -> Unit = {} // 新增：开始扫描回调
 ) {
     // 是否处于添加新设备模式
     var isAddingDevice by remember { mutableStateOf(false) }
@@ -123,10 +122,7 @@ fun DeviceSelectionDialog(
                         onlineDevices = onlineDevices,
                         onDeviceSelected = { /* unused */ },
                         onAddClick = { isAddingDevice = true },
-                        onConnectByAddress = onConnectByAddress,
-                        onSelectEInkPendant = {
-                            onSelectEInkPendant()
-                        }
+                        onConnectByAddress = onConnectByAddress
                     )
                 }
             }
@@ -140,8 +136,7 @@ private fun SavedDeviceList(
     onlineDevices: Set<String>,
     onDeviceSelected: (Device) -> Unit, // 未使用
     onAddClick: () -> Unit,
-    onConnectByAddress: (String) -> Unit,
-    onSelectEInkPendant: () -> Unit
+    onConnectByAddress: (String) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize()
@@ -177,25 +172,6 @@ private fun SavedDeviceList(
         
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 墨水屏挂件固定入口
-        Button(
-            onClick = onSelectEInkPendant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(42.dp),
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        ) {
-            Text(
-                text = "墨水屏挂件",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-        }
-        
         // 添加新设备按钮
         Button(
             onClick = onAddClick,

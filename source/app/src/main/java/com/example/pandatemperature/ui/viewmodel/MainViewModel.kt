@@ -68,12 +68,6 @@ import com.example.pandatemperature.utils.shouldExitStationary
 import com.example.pandatemperature.utils.isMoving
 import com.example.pandatemperature.utils.HISTORY_EVAL_WINDOW_SEC
 import com.example.pandatemperature.data.weather.GPS_SAMPLE_INTERVAL_MS
-import com.example.pandatemperature.data.nfc.NfcPresenceDetector
-import android.app.Activity
-import android.nfc.Tag
-import android.graphics.Bitmap
-import com.example.pandatemperature.data.nfc.EInkImageEncoder
-import com.example.pandatemperature.data.nfc.EInkEepromImageSender
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
 
@@ -272,165 +266,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isClearingData = MutableStateFlow(false)
     val isClearingData: StateFlow<Boolean> = _isClearingData.asStateFlow()
     
-    // 首页模式（默认温湿度主界面 / 墨水屏挂件界面）
-    enum class HomeMode {
-        DEFAULT,
-        EINK_PENDANT
-    }
-
-    private val _homeMode = MutableStateFlow(HomeMode.DEFAULT)
-    val homeMode: StateFlow<HomeMode> = _homeMode.asStateFlow()
-
-    fun setHomeMode(mode: HomeMode) {
-        _homeMode.value = mode
-    }
-
-    // 前台 NFC 贴片在场检测（仅墨水屏挂件界面时有效）
-    private val _nfcTagInRange = MutableStateFlow(false)
-    val nfcTagInRange: StateFlow<Boolean> = _nfcTagInRange.asStateFlow()
-    private val _nfcTag = MutableStateFlow<Tag?>(null)
-    val nfcTag: StateFlow<Tag?> = _nfcTag.asStateFlow()
-    private var nfcPresenceDetector: NfcPresenceDetector? = null
-    private var nfcActivity: Activity? = null
-
-    fun startNfcPresenceDetection(activity: Activity) {
-        nfcActivity = activity
-        stopNfcPresenceDetection()
-        nfcPresenceDetector = NfcPresenceDetector(_nfcTagInRange, _nfcTag)
-        nfcPresenceDetector?.start(activity)
-    }
-
-    fun stopNfcPresenceDetection() {
-        nfcPresenceDetector?.stop()
-        nfcPresenceDetector = null
-        _nfcTag.value = null
-    }
-
-    // 墨水屏挂件：NFC 发送状态
-    data class EInkSendState(
-        val isSending: Boolean = false,
-        val chunkIndex: Int = 0,
-        val totalChunks: Int = 0,
-        val message: String? = null,
-        val error: String? = null
-    )
-
-    private val _eInkSendState = MutableStateFlow(EInkSendState())
-    val eInkSendState: StateFlow<EInkSendState> = _eInkSendState.asStateFlow()
-
-    private val eInkSender = EInkEepromImageSender()
-    private var eInkSendJob: Job? = null
-    private var eInkSessionCounter: Int = 0
-
-    fun cancelEInkSend() {
-        eInkSendJob?.cancel()
-        eInkSendJob = null
-        _eInkSendState.value = EInkSendState(isSending = false, message = null, error = null)
-    }
-
-    fun sendEInkPreviewOverNfc(previewBitmap: Bitmap) {
-        if (_eInkSendState.value.isSending) return
-
-        eInkSendJob?.cancel()
-        _eInkSendState.value = EInkSendState(isSending = true, message = "开始发送…")
-
-        val sessionId = (eInkSessionCounter++ and 0xFF)
-
-        eInkSendJob = viewModelScope.launch {
-            val tag = _nfcTag.value
-            if (tag == null) {
-                _eInkSendState.value = EInkSendState(
-                    isSending = false,
-                    message = null,
-                    error = "未检测到 NFC 贴片，请将挂件贴近手机背面后重试"
-                )
-                return@launch
-            }
-
-            // 发送期间暂停 NfcPresenceDetector（不关闭 ReaderMode，保持 Tag handle 有效）
-            nfcPresenceDetector?.pause()
-
-            try {
-                _eInkSendState.value = _eInkSendState.value.copy(message = "编码图片数据…")
-                val planes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                    EInkImageEncoder.encodeBlackRedPlanes(previewBitmap, 128, 250)
-                }
-                val payload = planes.toPayload()
-
-                var attempt = 0
-                while (isActive) {
-                    attempt++
-                    try {
-                        eInkSender.sendImage(
-                            tag = tag,
-                            sessionId = sessionId,
-                            width = planes.width,
-                            height = planes.height,
-                            format = 0x03,
-                            payload = payload
-                        ) { progress ->
-                            when (progress) {
-                                is EInkEepromImageSender.Progress.Sending -> {
-                                    _eInkSendState.value = _eInkSendState.value.copy(
-                                        isSending = true,
-                                        chunkIndex = progress.chunkIndex,
-                                        totalChunks = progress.totalChunks,
-                                        message = "发送中 ${progress.chunkIndex + 1}/${progress.totalChunks}（第 $attempt 次尝试）",
-                                        error = null
-                                    )
-                                }
-                                is EInkEepromImageSender.Progress.Done -> {
-                                    _eInkSendState.value = _eInkSendState.value.copy(
-                                        isSending = false,
-                                        message = progress.message,
-                                        error = null
-                                    )
-                                }
-                                is EInkEepromImageSender.Progress.WaitingTag -> {
-                                    _eInkSendState.value = _eInkSendState.value.copy(
-                                        isSending = true,
-                                        message = progress.message,
-                                        error = null
-                                    )
-                                }
-                            }
-                        }
-                        showSnackbar("发送完成，请稍候等待设备刷新", SnackbarType.SUCCESS)
-                        break
-                    } catch (io: java.io.IOException) {
-                        val ioMessage = io.message ?: "未知 IO 异常"
-                        addLog("NFC IO 异常: $ioMessage", LogType.ERROR)
-                        EInkEepromImageSender.tryAbort(tag, sessionId)
-
-                        val current = _eInkSendState.value
-                        val total = current.totalChunks
-                        val currentHumanChunk = if (total > 0) current.chunkIndex + 1 else 0
-                        val progressText = if (total > 0) "，当前进度：$currentHumanChunk/$total 块" else ""
-                        _eInkSendState.value = current.copy(
-                            isSending = false,
-                            error = "NFC 通讯失败（第 $attempt 次$progressText）：$ioMessage，请保持挂件紧贴手机背面，避免晃动，稍后将自动重试…"
-                        )
-                        kotlinx.coroutines.delay(800)
-                        _eInkSendState.value = _eInkSendState.value.copy(
-                            isSending = true,
-                            error = null,
-                            message = "重新尝试发送…（第 ${attempt + 1} 次）"
-                        )
-                        continue
-                    }
-                }
-            } catch (e: CancellationException) {
-                _eInkSendState.value = EInkSendState(isSending = false, error = "发送已取消")
-            } catch (e: Exception) {
-                _eInkSendState.value = EInkSendState(isSending = false, error = "${e.javaClass.simpleName}: ${e.message}")
-                showSnackbar("发送失败：${e.message ?: "未知错误"}", SnackbarType.ERROR)
-            } finally {
-                eInkSendJob = null
-                nfcPresenceDetector?.resume()
-            }
-        }
-    }
-
     // 历史记录进度统计
     private var totalHistoryReceivedCount: Int = 0
     private var historyPacketIndex: Int = 0
@@ -694,7 +529,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             _viewingDeviceAddress.value = latestDevice.macAddress
-            setHomeMode(HomeMode.DEFAULT)
             _taskStatus.value = TaskStatus("正在连接中...", 0, 0)
             addLog("正在自动连接最近设备: ${latestDevice.name}...", LogType.INFO)
             val success = bleManager.connect(latestDevice.macAddress)
@@ -717,9 +551,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 立即设置正在查看的设备，以便显示历史数据
             _viewingDeviceAddress.value = device.address
 
-            // 切回默认首页模式（温湿度主界面）
-            setHomeMode(HomeMode.DEFAULT)
-            
             // 连接时自动保存设备
             saveDevice(device)
             
@@ -744,9 +575,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 立即设置正在查看的设备，以便显示历史数据
             _viewingDeviceAddress.value = address
 
-            // 切回默认首页模式（温湿度主界面）
-            setHomeMode(HomeMode.DEFAULT)
-            
             _taskStatus.value = TaskStatus("正在连接中...", 0, 0)
             addLog("正在连接设备: $address...", LogType.INFO)
             val success = bleManager.connect(address)

@@ -28,10 +28,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import android.graphics.Bitmap
-import android.graphics.ImageDecoder
-import android.net.Uri
-import android.provider.MediaStore
 import java.util.Collections
 import com.example.pandatemperature.ui.screen.MainScreen
 import com.example.pandatemperature.ui.theme.PandaTemperatureTheme
@@ -61,18 +57,6 @@ class MainActivity : ComponentActivity() {
     private var pendingBluetoothReadyAction: BluetoothReadyAction? = null
     private var startupAutoConnectStarted = false
 
-    // 墨水屏挂件选中的图片（供 Compose 使用）
-    private var selectedEInkBitmap = mutableStateOf<Bitmap?>(null)
-
-    // 图片选择 launcher
-    private val pickEInkImageLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            selectedEInkBitmap.value = loadBitmapFromUri(uri)
-        }
-    }
-    
     // 权限请求
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -182,10 +166,6 @@ class MainActivity : ComponentActivity() {
                             // 先检查权限和蓝牙，通过后再显示对话框
                             checkPermissionsAndScan()
                         },
-                        selectedEInkImage = selectedEInkBitmap.value,
-                        onPickEInkImage = {
-                            pickEInkImageLauncher.launch("image/*")
-                        },
                         onDeviceSelected = { device ->
                             viewModel.connectDevice(device)
                         },
@@ -264,21 +244,6 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun loadBitmapFromUri(uri: Uri): Bitmap? {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val source = ImageDecoder.createSource(contentResolver, uri)
-                ImageDecoder.decodeBitmap(source)
-            } else {
-                @Suppress("DEPRECATION")
-                MediaStore.Images.Media.getBitmap(contentResolver, uri)
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "加载图片失败", Toast.LENGTH_SHORT).show()
-            null
-        }
-    }
-    
     /**
      * 检查权限并开始扫描
      */

@@ -159,10 +159,11 @@ fun StatusBar(
                             )
                         }
 
-                        // 电压由实时温湿度数据同步上报；旧固件没有数据时不显示。
-                        if (isConnected && batteryVoltage != null) {
+                        // 电压预留位：连接后常驻显示，避免有无电压数据时布局跳动。
+                        // 固件不上报电压字段时显示占位符（实测本机型实时帧仅 6 字节，无电压）。
+                        if (isConnected) {
                             Text(
-                                text = String.format("%.1fV", batteryVoltage),
+                                text = batteryVoltage?.let { String.format("%.1fV", it) } ?: "-- V",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Normal,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),

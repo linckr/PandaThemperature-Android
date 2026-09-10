@@ -19,9 +19,6 @@ object DeviceTypes {
     
     /** 未知设备 */
     const val UNKNOWN = "unknown"
-
-    /** 墨水屏挂件（逻辑设备类型，不依赖蓝牙） */
-    const val EINK_PENDANT = "eink_pendant"
     
     /**
      * 根据设备名称推断设备类型

@@ -9,8 +9,11 @@ plugins {
 
 /**
  * Release 签名材料从仓库根目录的 keystore.properties 读取。
- * 该文件已被 .gitignore 排除，签名文件与口令都不入库、不进源码压缩包；
- * 文件不存在时 release 变体退回未签名构建，保证 assembleRelease 仍可用于编译验证。
+ * 该文件已被 .gitignore 排除，签名文件与口令都不入库、不进源码压缩包。
+ *
+ * 未提供 keystore.properties 时，release 变体退回 Android 默认调试密钥签名，
+ * 使 assembleRelease 仍能产出可直接安装的 APK（仅用于本地联调，
+ * 不可用于分发；一旦补齐正式签名，产物签名会随之改变）。
  */
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
@@ -54,8 +57,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // 无 keystore.properties 时为 null，Gradle 会产出未签名 release APK。
+            // 优先使用 keystore.properties 的正式签名；缺失时退回调试密钥，
+            // 保证 release APK 仍可安装，便于真机联调。
             signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

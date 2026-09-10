@@ -5,7 +5,6 @@ import android.graphics.Shader
 import android.os.Build
 import android.bluetooth.BluetoothDevice
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,36 +20,27 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.pandatemperature.data.bluetooth.BleManager
 import com.example.pandatemperature.data.model.TaskStatus
 import com.example.pandatemperature.ui.components.*
 import com.example.pandatemperature.ui.components.weatherinsights.WeatherInsightsSection
 import com.example.pandatemperature.ui.viewmodel.MainViewModel
-import android.app.Activity
-import android.graphics.Bitmap
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -63,8 +53,6 @@ import androidx.compose.animation.core.*
 fun MainScreen(
     viewModel: MainViewModel,
     onDeviceSelect: () -> Unit,
-    selectedEInkImage: Bitmap? = null,
-    onPickEInkImage: () -> Unit = {},
     // scannedDevices: List<BluetoothDevice> = emptyList(), // 移除
     // isScanning: Boolean = false, // 移除
     // showDialog: Boolean = false, // 移除
@@ -102,9 +90,6 @@ fun MainScreen(
     val lastGpsAltitudeMeters by viewModel.lastGpsAltitudeMeters.collectAsStateWithLifecycle()
     val lastHistoryEvaluationResult by viewModel.lastHistoryEvaluationResult.collectAsStateWithLifecycle()
     val weatherInsights by viewModel.weatherInsights.collectAsStateWithLifecycle()
-    val homeMode by viewModel.homeMode.collectAsStateWithLifecycle()
-    val nfcTagInRange by viewModel.nfcTagInRange.collectAsStateWithLifecycle()
-    val eInkSendState by viewModel.eInkSendState.collectAsStateWithLifecycle()
     // ⭐ v1.2 新增：配置相关状态
     val historyTotalRecords by viewModel.historyTotalRecords.collectAsStateWithLifecycle()
     val isClearingData by viewModel.isClearingData.collectAsStateWithLifecycle()
@@ -182,66 +167,65 @@ fun MainScreen(
                 // 不再使用 topBar，设备信息移到首页内容中
             },
             bottomBar = {
-                // 墨水屏模式全屏，不显示底部导航栏
-                if (selectedTabIndex != 0 || homeMode != MainViewModel.HomeMode.EINK_PENDANT) {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface, // 明确背景色
-                        modifier = Modifier.height(83.dp) // ⭐ 增加约 3dp 高度（原 80dp）
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface, // 明确背景色
+                    modifier = Modifier.height(83.dp) // ⭐ 增加约 3dp 高度（原 80dp）
+                ) {
+                navigationItems.forEachIndexed { index, (title, icon) ->
+                    val isSelected = selectedTabIndex == index
+                    
+                    // 选中动画
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1.1f else 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        ),
+                        label = "iconScale_$index"
+                    )
+                    val iconColor by animateColorAsState(
+                        targetValue = if (isSelected) Color(0xFF0d7ff2) else Color(0xFF757575),
+                        animationSpec = tween(200),
+                        label = "iconColor_$index"
+                    )
+                    val textColor by animateColorAsState(
+                        targetValue = if (isSelected) Color(0xFF0d7ff2) else Color(0xFF757575),
+                        animationSpec = tween(200),
+                        label = "textColor_$index"
+                    )
+                    
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(top = 4.dp, bottom = 8.dp)
+                            .clickable { selectedTabIndex = index },
+                        contentAlignment = Alignment.Center
                     ) {
-                    navigationItems.forEachIndexed { index, (title, icon) ->
-                        val isSelected = selectedTabIndex == index
-                        
-                        // 选中动画
-                        val iconScale by animateFloatAsState(
-                            targetValue = if (isSelected) 1.1f else 1f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            ),
-                            label = "iconScale_$index"
-                        )
-                        val iconColor by animateColorAsState(
-                            targetValue = if (isSelected) Color(0xFF0d7ff2) else Color(0xFF757575),
-                            animationSpec = tween(200),
-                            label = "iconColor_$index"
-                        )
-                        val textColor by animateColorAsState(
-                            targetValue = if (isSelected) Color(0xFF0d7ff2) else Color(0xFF757575),
-                            animationSpec = tween(200),
-                            label = "textColor_$index"
-                        )
-                        
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(top = 4.dp, bottom = 8.dp)
-                                .clickable { selectedTabIndex = index },
-                            contentAlignment = Alignment.Center
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                            ) {
-                                Icon(
-                                    icon,
-                                    contentDescription = title,
-                                    tint = iconColor,
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .scale(iconScale)
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = title,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = textColor
-                                )
-                            }
+                            Icon(
+                                icon,
+                                contentDescription = title,
+                                tint = iconColor,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .scale(iconScale)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = textColor
+                            )
                         }
                     }
                 }
-                }
+            }
+            
+
             },
             contentWindowInsets = WindowInsets(0.dp), // 禁用默认padding，我们手动处理
             containerColor = MaterialTheme.colorScheme.background
@@ -276,266 +260,52 @@ fun MainScreen(
                 ) { targetIndex ->
                     when (targetIndex) {
                         0 -> {
-                            when (homeMode) {
-                                MainViewModel.HomeMode.DEFAULT -> {
-                                    // 首页：实时温湿度 + 历史温湿度预览
-                                    HomeScreen(
-                                        connectionState = connectionState,
-                                        deviceName = displayDeviceName,
-                                        taskStatus = taskStatus,
-                                        firmwareVersion = deviceStatus?.firmwareVersion,
-                                        temperature = temperature,
-                                        humidity = humidity,
-                                        pressure = pressure,  // ⭐ v1.1 新增
-                                        gpsAltitudeMeters = lastGpsAltitudeMeters,  // 有则与气压混合计算海拔
-                                        maxTemperature = maxTemperature,
-                                        minTemperature = minTemperature,
-                                        isMaxMinTempSupported = isMaxMinTempSupported,
-                                        maxMinTempNeedManualSync = maxMinTempNeedManualSync,
-                                        lastUpdateTime = lastUpdateTime,
-                                        batteryVoltage = batteryVoltage,  // ⭐ v1.1 新增
-                                        batteryPercent = batteryPercent,  // ⭐ v1.1 新增
-                                        isLoadingRealtimeData = isLoadingRealtimeData,  // ⭐ v1.1 更新
-                                        historyRecords = homeHistoryRecords,
-                                        last24HoursRecords = last24HoursRecords,
-                                        stats = stats,
-                                        wapsResult = wapsResult,  // WAPS 天气预警
-                                        weatherInsights = weatherInsights,  // 首页气象洞察
-                                        onDeviceSelect = onDeviceSelect,
-                                        onReadRealtimeData = { viewModel.readRealtimeData() },  // ⭐ v1.1 更新
-                                        onRefreshMaxMinTemp = { viewModel.readMaxMinTemperature() },  // 点击最高最低温度刷新
-                                        onClearHistory = { viewModel.clearHistory() },
-                                        onDisconnectDevice = { viewModel.disconnectDevice() },
-                                        onShowMoreHistory = { selectedTabIndex = 1 }, // 跳转到历史数据页
-                                        onConfigClick = {
-                                            if (connectionState == BleManager.ConnectionState.ServicesDiscovered) {
-                                                viewModel.readInterval() // 打开前先读取一次
-                                                configBatteryVoltage = batteryVoltage
-                                                    ?: deviceAddress?.let { address ->
-                                                        savedDevicesForDisplay.find { it.macAddress == address }?.latestBatteryVoltage
-                                                    }
-                                                showConfigModal = true
+                            // 首页：实时温湿度 + 历史温湿度预览
+                            HomeScreen(
+                                connectionState = connectionState,
+                                deviceName = displayDeviceName,
+                                taskStatus = taskStatus,
+                                firmwareVersion = deviceStatus?.firmwareVersion,
+                                temperature = temperature,
+                                humidity = humidity,
+                                pressure = pressure,  // ⭐ v1.1 新增
+                                gpsAltitudeMeters = lastGpsAltitudeMeters,  // 有则与气压混合计算海拔
+                                maxTemperature = maxTemperature,
+                                minTemperature = minTemperature,
+                                isMaxMinTempSupported = isMaxMinTempSupported,
+                                maxMinTempNeedManualSync = maxMinTempNeedManualSync,
+                                lastUpdateTime = lastUpdateTime,
+                                batteryVoltage = batteryVoltage,  // ⭐ v1.1 新增
+                                batteryPercent = batteryPercent,  // ⭐ v1.1 新增
+                                isLoadingRealtimeData = isLoadingRealtimeData,  // ⭐ v1.1 更新
+                                historyRecords = homeHistoryRecords,
+                                last24HoursRecords = last24HoursRecords,
+                                stats = stats,
+                                wapsResult = wapsResult,  // WAPS 天气预警
+                                weatherInsights = weatherInsights,  // 首页气象洞察
+                                onDeviceSelect = onDeviceSelect,
+                                onReadRealtimeData = { viewModel.readRealtimeData() },  // ⭐ v1.1 更新
+                                onRefreshMaxMinTemp = { viewModel.readMaxMinTemperature() },  // 点击最高最低温度刷新
+                                onClearHistory = { viewModel.clearHistory() },
+                                onDisconnectDevice = { viewModel.disconnectDevice() },
+                                onShowMoreHistory = { selectedTabIndex = 1 }, // 跳转到历史数据页
+                                onConfigClick = {
+                                    if (connectionState == BleManager.ConnectionState.ServicesDiscovered) {
+                                        viewModel.readInterval() // 打开前先读取一次
+                                        configBatteryVoltage = batteryVoltage
+                                            ?: deviceAddress?.let { address ->
+                                                savedDevicesForDisplay.find { it.macAddress == address }?.latestBatteryVoltage
                                             }
-                                        },
-                                        onShowInsightsPage = { showInsightsPage = true },
-                                        onOpenEInkPendant = { viewModel.setHomeMode(MainViewModel.HomeMode.EINK_PENDANT) },
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(paddingValues)
-                                    )
-                                }
-                                MainViewModel.HomeMode.EINK_PENDANT -> {
-                                    val selectedBitmapState = remember { mutableStateOf<Bitmap?>(null) }
-                                    val previewBitmapState = remember { mutableStateOf<Bitmap?>(null) }
-                                    val showPreviewModalState = remember { mutableStateOf(false) }
-                                    val isProcessingPreviewState = remember { mutableStateOf(false) }
-                                    val previewErrorState = remember { mutableStateOf<String?>(null) }
-                                    var showDisconnectConfirm by remember { mutableStateOf(false) }
-                                    val context = LocalContext.current
-                                    val activity = context as? Activity
-                                    val scope = rememberCoroutineScope()
-
-                                    LaunchedEffect(selectedEInkImage) {
-                                        selectedBitmapState.value = selectedEInkImage
+                                        showConfigModal = true
                                     }
-                                    DisposableEffect(showPreviewModalState.value, homeMode) {
-                                        if (homeMode == MainViewModel.HomeMode.EINK_PENDANT &&
-                                            showPreviewModalState.value
-                                        ) {
-                                            val act = activity
-                                            if (act != null) {
-                                                viewModel.startNfcPresenceDetection(act)
-                                            }
-                                        } else {
-                                            viewModel.stopNfcPresenceDetection()
-                                        }
-                                        onDispose {
-                                            viewModel.stopNfcPresenceDetection()
-                                        }
-                                    }
+                                },
+                                onShowInsightsPage = { showInsightsPage = true },
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(paddingValues)
+                            )
+                        
 
-                                    EInkPendantScreen(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(paddingValues),
-                                        connectionState = connectionState,
-                                        deviceName = displayDeviceName,
-                                        taskStatus = taskStatus,
-                                        batteryVoltage = batteryVoltage,
-                                        batteryPercent = batteryPercent,
-                                        firmwareVersion = deviceStatus?.firmwareVersion,
-                                        imageBitmap = selectedBitmapState.value,
-                                        nfcTagInRange = nfcTagInRange,
-                                        onDeviceBarClick = {
-                                            if (connectionState == BleManager.ConnectionState.Disconnected) {
-                                                onDeviceSelect()
-                                            } else {
-                                                showDisconnectConfirm = true
-                                            }
-                                        },
-                                        onConfigClick = {
-                                            if (connectionState == BleManager.ConnectionState.ServicesDiscovered) {
-                                                viewModel.readInterval()
-                                                configBatteryVoltage = batteryVoltage
-                                                    ?: deviceAddress?.let { address ->
-                                                        savedDevicesForDisplay.find { it.macAddress == address }?.latestBatteryVoltage
-                                                    }
-                                                showConfigModal = true
-                                            }
-                                        },
-                                        onBackToHome = { viewModel.setHomeMode(MainViewModel.HomeMode.DEFAULT) },
-                                        onSelectImageClick = { onPickEInkImage() },
-                                        onConfirmProcessClick = { croppedBitmap ->
-                                            if (croppedBitmap.isRecycled) return@EInkPendantScreen
-                                            // 先弹窗给用户即时反馈，再后台处理预览图
-                                            showPreviewModalState.value = true
-                                            isProcessingPreviewState.value = true
-                                            previewBitmapState.value = null
-                                            previewErrorState.value = null
-                                            scope.launch {
-                                                try {
-                                                    val preview = withContext(Dispatchers.Default) {
-                                                        toSimpleEInkPreview(croppedBitmap)
-                                                    }
-                                                    previewBitmapState.value = preview
-                                                } catch (e: Exception) {
-                                                    // 不再静默：在弹窗内直接展示异常信息
-                                                    previewErrorState.value = e.toString()
-                                                } finally {
-                                                    isProcessingPreviewState.value = false
-                                                }
-                                            }
-                                        }
-                                    )
-
-                                    if (showDisconnectConfirm) {
-                                        AlertDialog(
-                                            onDismissRequest = { showDisconnectConfirm = false },
-                                            title = { Text("断开连接") },
-                                            text = { Text("确定要断开与设备的连接吗？") },
-                                            confirmButton = {
-                                                TextButton(onClick = {
-                                                    showDisconnectConfirm = false
-                                                    viewModel.disconnectDevice()
-                                                }) { Text("确认断开") }
-                                            },
-                                            dismissButton = {
-                                                TextButton(onClick = { showDisconnectConfirm = false }) { Text("取消") }
-                                            }
-                                        )
-                                    }
-
-                                    val modalBitmap = previewBitmapState.value
-                                    if (showPreviewModalState.value) {
-                                        AlertDialog(
-                                            onDismissRequest = {
-                                                if (!eInkSendState.isSending && !isProcessingPreviewState.value) {
-                                                    viewModel.cancelEInkSend()
-                                                    showPreviewModalState.value = false
-                                                }
-                                            },
-                                            confirmButton = {
-                                                TextButton(
-                                                    onClick = {
-                                                        val bmp = modalBitmap ?: return@TextButton
-                                                        if (!bmp.isRecycled) viewModel.sendEInkPreviewOverNfc(bmp)
-                                                    },
-                                                    enabled = !eInkSendState.isSending &&
-                                                        !isProcessingPreviewState.value &&
-                                                        modalBitmap != null &&
-                                                        !modalBitmap.isRecycled &&
-                                                        previewErrorState.value == null
-                                                ) {
-                                                    Text(
-                                                        when {
-                                                            eInkSendState.isSending -> "发送中…"
-                                                            eInkSendState.error != null -> "重新发送"
-                                                            eInkSendState.message == "发送完成" -> "已完成"
-                                                            else -> "确认发送"
-                                                        }
-                                                    )
-                                                }
-                                            },
-                                            dismissButton = {
-                                                TextButton(
-                                                    onClick = {
-                                                        if (eInkSendState.isSending) {
-                                                            viewModel.cancelEInkSend()
-                                                        }
-                                                        showPreviewModalState.value = false
-                                                    },
-                                                    enabled = !eInkSendState.isSending
-                                                ) {
-                                                    Text(if (eInkSendState.isSending) "取消发送" else "返回修改")
-                                                }
-                                            },
-                                            title = { Text("确认发送") },
-                                            text = {
-                                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    // NFC 状态提示：只在弹窗打开期间显示
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Nfc,
-                                                            contentDescription = null,
-                                                            modifier = Modifier.size(14.dp),
-                                                            tint = if (nfcTagInRange) MaterialTheme.colorScheme.primary
-                                                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)
-                                                        )
-                                                        Text(
-                                                            text = if (nfcTagInRange) "贴片已贴近" else "等待贴片靠近手机背面…",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = if (nfcTagInRange) MaterialTheme.colorScheme.primary
-                                                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
-                                                        )
-                                                    }
-                                                    val previewError = previewErrorState.value
-                                                    if (previewError != null) {
-                                                        Text(
-                                                            text = "图片处理失败：$previewError",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = MaterialTheme.colorScheme.error
-                                                        )
-                                                    } else if (isProcessingPreviewState.value || modalBitmap == null || modalBitmap.isRecycled) {
-                                                        Column(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                                                            horizontalAlignment = Alignment.CenterHorizontally
-                                                        ) {
-                                                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                                            Text(
-                                                                text = "处理中…",
-                                                                style = MaterialTheme.typography.bodySmall,
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                            )
-                                                        }
-                                                    } else {
-                                                        Image(
-                                                            bitmap = modalBitmap.asImageBitmap(),
-                                                            contentDescription = "三色化预览",
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .aspectRatio(250f / 128f),
-                                                            contentScale = ContentScale.Fit
-                                                        )
-                                                    }
-                                                    val msg = eInkSendState.error ?: eInkSendState.message
-                                                    if (!msg.isNullOrBlank()) {
-                                                        Text(
-                                                            text = msg,
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = if (eInkSendState.error != null) MaterialTheme.colorScheme.error
-                                                            else MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                            }
                         }
                     1 -> {
                         // 历史数据页
@@ -588,11 +358,7 @@ fun MainScreen(
                     viewModel.closeDeviceDialog()
                     onDismissDeviceDialog()
                 },
-                onStartScan = { viewModel.startScanPublic() }, // 新增：手动开始扫描回调
-                onSelectEInkPendant = {
-                    viewModel.setHomeMode(MainViewModel.HomeMode.EINK_PENDANT)
-                    viewModel.closeDeviceDialog()
-                }
+                onStartScan = { viewModel.startScanPublic() } // 新增：手动开始扫描回调
             )
         }
 
@@ -770,7 +536,6 @@ private fun HomeScreen(
     onShowMoreHistory: () -> Unit,
     onConfigClick: () -> Unit,
     onShowInsightsPage: () -> Unit,
-    onOpenEInkPendant: () -> Unit = {},  // 调试：首页遮罩下打开墨水屏
     modifier: Modifier = Modifier
 ) {
     // 遮罩显示状态
@@ -1089,27 +854,6 @@ private fun HomeScreen(
                         fontSize = 16.sp
                     )
                 }
-
-                // 调试：打开墨水屏
-                Box(
-                    modifier = Modifier
-                        .width(200.dp)
-                        .height(50.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable(onClick = onOpenEInkPendant)
-                        .background(
-                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.9f)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "打开墨水屏",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        fontSize = 16.sp
-                    )
-                }
             }
         }
         
@@ -1227,22 +971,4 @@ private fun HistoryTabContent(
         onBack = {}, // 作为TAB内容，不需要返回按钮
         modifier = modifier
     )
-}
-
-/**
- * 简单三色化预览：将任意 Bitmap 转换为 128x250 的黑/白/红预览图。
- * 若 src 无效或处理异常则返回空白图，避免闪退。
- */
-private fun toSimpleEInkPreview(src: Bitmap): Bitmap {
-    val targetWidth = 128
-    val targetHeight = 250
-    if (src.isRecycled || src.width <= 0 || src.height <= 0) {
-        return Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-    }
-    val result = com.example.pandatemperature.data.nfc.EInkTriColorQuantizer.quantize(
-        src = src,
-        width = targetWidth,
-        height = targetHeight
-    )
-    return com.example.pandatemperature.data.nfc.EInkTriColorQuantizer.renderPreview(result)
 }
