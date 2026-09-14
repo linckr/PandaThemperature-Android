@@ -6,7 +6,9 @@ import java.nio.ByteOrder
 
 /**
  * 实时数据解析器（新固件 v1.1+）
- * 解析合并的实时数据特征（v2 为 6 字节；未来扩展为末尾追加 uint16 毫伏电压）
+ * 解析合并的实时数据特征：基础帧 6 字节（温度/湿度/气压）；
+ * 固件 1.0.8 起可扩展为 8 字节，末尾追加 uint16 小端毫伏电压，
+ * 并对哨兵值（`0xFFFF`）与超出量程（nRF52810 为 1.7~3.6 V）的读数判为无效。
  */
 class RealtimeDataParserV2 : DataParser<ThermometerData> {
 
@@ -22,6 +24,25 @@ class RealtimeDataParserV2 : DataParser<ThermometerData> {
 
         /** 含电压字段时的最小帧长。 */
         const val FRAME_SIZE_WITH_VOLTAGE = BATTERY_VOLTAGE_OFFSET + BATTERY_VOLTAGE_SIZE
+
+        /**
+         * 电池电压的「无有效数据」哨兵值，单位毫伏。
+         *
+         * 固件在 ADC 连续失败 / 尚未采到样时上报 `0xFFFF`，表示设备暂时没有有效电压数据。
+         * 该值必须映射为 `null`（UI 显示 `--`），**不能**当作 65535 mV = 65.535 V 展示。
+         */
+        const val BATTERY_VOLTAGE_INVALID_MV = 0xFFFF
+
+        /**
+         * 电压量程下限（毫伏）。依据 nRF52810 数据手册：器件工作电压为 **1.7 ~ 3.6 V**，
+         * 因此本硬件不可能产出低于 1700 mV 的电池电压读数。
+         */
+        const val BATTERY_VOLTAGE_MIN_MV = 1700
+
+        /**
+         * 电压量程上限（毫伏）。依据同上：nRF52810 工作电压上限 3.6 V。
+         */
+        const val BATTERY_VOLTAGE_MAX_MV = 3600
 
         /** 毫伏换算为伏特的除数。 */
         private const val MILLIVOLT_PER_VOLT = 1000.0f
@@ -48,8 +69,23 @@ class RealtimeDataParserV2 : DataParser<ThermometerData> {
 
             // battery voltage: optional uint16 little-endian, unit: mV.
             // Keep the existing 6-byte v1/v2 packet fully compatible.
-            val batteryVoltage = if (data.size >= FRAME_SIZE_WITH_VOLTAGE) {
-                (buffer.getShort(BATTERY_VOLTAGE_OFFSET).toInt() and 0xFFFF) / MILLIVOLT_PER_VOLT
+            // voltageReported 表示「本帧是否携带了电压字段」，供上层区分
+            // 「旧固件没有电压能力」与「新固件上报了但值无效」两种 null。
+            val voltageReported = data.size >= FRAME_SIZE_WITH_VOLTAGE
+            val batteryVoltage = if (voltageReported) {
+                val millivolts = buffer.getShort(BATTERY_VOLTAGE_OFFSET).toInt() and 0xFFFF
+                // 两道防线，缺一不可：
+                // 1) 0xFFFF 是固件定义的显式哨兵（协议契约），语义优先，先判它；
+                // 2) 量程检查是第二道防线（不是替代品）：nRF52810 工作电压 1.7~3.6 V，
+                //    越界值物理上不可能，借此一并挡住 0 mV 与 ADC 异常畸形值。
+                // 任一命中即判为无效 → null，界面显示 `--`（绝不显示 65.535 V 这类读数）。
+                if (millivolts == BATTERY_VOLTAGE_INVALID_MV ||
+                    millivolts !in BATTERY_VOLTAGE_MIN_MV..BATTERY_VOLTAGE_MAX_MV
+                ) {
+                    null
+                } else {
+                    millivolts / MILLIVOLT_PER_VOLT
+                }
             } else {
                 null
             }
@@ -58,7 +94,8 @@ class RealtimeDataParserV2 : DataParser<ThermometerData> {
                 temperature = tempRaw / 100.0f,
                 humidity = humRaw / 100.0f,
                 pressure = pressureRaw / 10.0f,
-                batteryVoltage = batteryVoltage
+                batteryVoltage = batteryVoltage,
+                batteryVoltageReported = voltageReported
             )
         } catch (e: Exception) {
             null

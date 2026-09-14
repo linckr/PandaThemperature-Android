@@ -51,7 +51,16 @@ fun StatusCard(
             Divider()
             
             // 状态显示
-            StatusItem("采集间隔", deviceStatus?.interval?.let { "${it}秒" } ?: "--秒")
+            // 固件 v3 起 interval 表示"历史记录间隔"，采样固定 1 秒（用能力标志区分旧固件语义）
+            val intervalLabel = if (deviceStatus?.supportsHistoryInterval == true) "历史记录间隔" else "采集间隔"
+            StatusItem(intervalLabel, deviceStatus?.interval?.let { "${it}秒" } ?: "--秒")
+            if (deviceStatus?.supportsHistoryInterval == true) {
+                StatusItem("实时采样间隔", deviceStatus.sampleInterval?.let { "${it}秒" } ?: "1秒")
+                StatusItem(
+                    "预计保留时长",
+                    deviceStatus.retentionDays?.let { "约 ${it} 天" } ?: "--"
+                )
+            }
             StatusItem("存储记录数", deviceStatus?.recordCount?.toString() ?: "--")
             StatusItem("设备连接", if (deviceStatus?.isConnected == true) "是" else "否")
             StatusItem("时间同步", if (deviceStatus?.isTimeSynced == true) "是" else "否")

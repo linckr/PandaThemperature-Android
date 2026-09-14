@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DeviceHub
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,8 +20,9 @@ import com.example.pandatemperature.ui.viewmodel.MainViewModel
  * 设置页面子页面枚举
  */
 private enum class SettingsSubScreen {
-    Main,           // 主设置列表
-    DeviceManagement // 设备管理
+    Main,            // 主设置列表
+    DeviceManagement, // 设备管理
+    FirmwareUpdate    // 固件升级（BLE OTA）
 }
 
 /**
@@ -42,6 +44,7 @@ fun SettingsScreen(
         SettingsSubScreen.Main -> {
             SettingsMainScreen(
                 onNavigateToDeviceManagement = { currentSubScreen = SettingsSubScreen.DeviceManagement },
+                onNavigateToFirmwareUpdate = { currentSubScreen = SettingsSubScreen.FirmwareUpdate },
                 weatherAlertEnabled = weatherAlertEnabled,
                 onWeatherAlertEnabledChange = { viewModel.setWeatherAlertEnabled(it) },
                 modifier = modifier
@@ -55,6 +58,12 @@ fun SettingsScreen(
                 modifier = modifier
             )
         }
+        SettingsSubScreen.FirmwareUpdate -> {
+            FirmwareUpdateScreen(
+                onBack = { currentSubScreen = SettingsSubScreen.Main },
+                modifier = modifier
+            )
+        }
     }
 }
 
@@ -64,6 +73,7 @@ fun SettingsScreen(
 @Composable
 private fun SettingsMainScreen(
     onNavigateToDeviceManagement: () -> Unit,
+    onNavigateToFirmwareUpdate: () -> Unit,
     weatherAlertEnabled: Boolean = true,
     onWeatherAlertEnabledChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
@@ -127,6 +137,14 @@ private fun SettingsMainScreen(
                 title = "设备管理",
                 subtitle = "管理已保存的设备",
                 onClick = onNavigateToDeviceManagement
+            )
+            HorizontalDivider()
+            // 固件升级（BLE OTA）
+            SettingsMenuItem(
+                icon = Icons.Default.SystemUpdate,
+                title = "固件升级",
+                subtitle = "通过蓝牙升级设备固件（zephyr.signed.bin）",
+                onClick = onNavigateToFirmwareUpdate
             )
         }
     }

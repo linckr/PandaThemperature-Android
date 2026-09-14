@@ -71,6 +71,37 @@ class BleFrameDiagnosticsTest {
     }
 
     @Test
+    fun flagsInvalidSentinelVoltageInRealtimeDiagnostics() {
+        val frame = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(2534)
+            .putShort(4567)
+            .putShort(10132)
+            .putShort(0xFFFF.toShort())
+            .array()
+
+        val message = BleFrameDiagnostics.observeRealtime(frame, 6, 6)
+
+        assertNotNull(message)
+        assertTrue(message!!.contains("无效哨兵"))
+        assertTrue(message.contains("0xFFFF"))
+    }
+
+    @Test
+    fun flagsOutOfRangeVoltageInRealtimeDiagnostics() {
+        val frame = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(2534)
+            .putShort(4567)
+            .putShort(10132)
+            .putShort(0) // 0 mV，低于 nRF52810 的 1.7 V 工作下限
+            .array()
+
+        val message = BleFrameDiagnostics.observeRealtime(frame, 6, 6)
+
+        assertNotNull(message)
+        assertTrue(message!!.contains("超出量程"))
+    }
+
+    @Test
     fun resetAllowsBaselineReportAgain() {
         val frame = realtimeFrame(6)
 

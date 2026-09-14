@@ -15,6 +15,7 @@ import com.example.pandatemperature.data.database.dao.TemperatureRecordDao
 import com.example.pandatemperature.data.model.*
 import com.example.pandatemperature.data.model.HistoryProgress
 import com.example.pandatemperature.data.device.model.DeviceTypes
+import com.example.pandatemperature.data.device.model.resolveDisplayedBatteryVoltage
 import com.example.pandatemperature.data.device.profile.DeviceProfileFactory
 import com.example.pandatemperature.data.device.profile.thermometer.ThermometerProfile
 import com.example.pandatemperature.data.device.parser.*
@@ -47,27 +48,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import com.example.pandatemperature.data.location.LocationManager
 import com.example.pandatemperature.service.BleConnectionForegroundService
-import com.example.pandatemperature.data.weather.AlertLevel
-import com.example.pandatemperature.data.weather.GpsSample
-import com.example.pandatemperature.data.weather.PressureSample
-import com.example.pandatemperature.data.weather.WapsBuffer
 import com.example.pandatemperature.data.weather.HistoryEvaluationResult
 import com.example.pandatemperature.data.weather.WapsResult
-import com.example.pandatemperature.data.weather.WapsState
+import com.example.pandatemperature.data.weather.WapsMonitor
 import com.example.pandatemperature.data.weather.insights.WeatherInsightsResult
 import com.example.pandatemperature.utils.calculateAltitude
-import com.example.pandatemperature.utils.medianFilterPressure
-import com.example.pandatemperature.utils.pressureToSeaLevel
 import com.example.pandatemperature.utils.showStormWarningNotification
-import com.example.pandatemperature.utils.computeEhr
-import com.example.pandatemperature.utils.decideAlertByEhr
 import com.example.pandatemperature.utils.evaluateHistorySegment
 import com.example.pandatemperature.utils.WeatherInsightsEngine
-import com.example.pandatemperature.utils.isInStationaryZoneByDisplacement
-import com.example.pandatemperature.utils.shouldExitStationary
 import com.example.pandatemperature.utils.isMoving
 import com.example.pandatemperature.utils.HISTORY_EVAL_WINDOW_SEC
-import com.example.pandatemperature.data.weather.GPS_SAMPLE_INTERVAL_MS
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
 
@@ -290,9 +280,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _hasLocationPermission = MutableStateFlow(false)
     val hasLocationPermission: StateFlow<Boolean> = _hasLocationPermission.asStateFlow()
     
-    // WAPS 天气预警
-    private val wapsBuffer = WapsBuffer()
-    private var wapsJob: Job? = null
+    // WAPS 天气预警（采样循环已提取到 WapsMonitor，这里只保留对外状态）
     private val _wapsResult = MutableStateFlow<WapsResult?>(null)
     val wapsResult: StateFlow<WapsResult?> = _wapsResult.asStateFlow()
     /** 最近一次 GPS 海拔（米），用于与气压混合计算海拔 */
@@ -308,6 +296,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("panda_prefs", Context.MODE_PRIVATE)
     private val _weatherAlertEnabled = MutableStateFlow(prefs.getBoolean("weather_alert_enabled", true))
     val weatherAlertEnabled: StateFlow<Boolean> = _weatherAlertEnabled.asStateFlow()
+
+    /**
+     * WAPS 采样循环：实时值/开关/GPS 由 [WapsMonitor.Inputs] 注入，结果由 [WapsMonitor.Outputs] 回收，
+     * 本类只负责随连接生命周期启停（见 [startWaps] / [stopWaps]）。
+     */
+    private val wapsMonitor = WapsMonitor(
+        inputs = WapsMonitor.Inputs(
+            alertEnabled = { _weatherAlertEnabled.value },
+            deviceReady = { connectionState.value == BleManager.ConnectionState.ServicesDiscovered },
+            pressureHpa = { _pressure.value },
+            temperatureC = { _temperature.value },
+            location = {
+                if (_hasLocationPermission.value) {
+                    locationManager.getCachedLocation() ?: locationManager.getCurrentLocation(5000)
+                } else null
+            }
+        ),
+        outputs = WapsMonitor.Outputs(
+            onResult = { _wapsResult.value = it },
+            onGpsAltitudeMeters = { _lastGpsAltitudeMeters.value = it },
+            onStormAlert = { showStormWarningNotification(getApplication(), it) }
+        )
+    )
     
     // Snackbar 消息反馈
     data class SnackbarData(
@@ -777,14 +788,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stopDataRecording()
         // 停止 WAPS 天气预警
         stopWaps()
-        wapsBuffer.clear()
+        wapsMonitor.clear()
         _lastHistoryEvaluationResult.value = null
     }
 
-    /** 更新实时电压状态，并异步持久化到当前设备。 */
-    private fun updateBatteryVoltage(voltage: Float?) {
-        if (voltage == null) return
-        _batteryVoltage.value = voltage
+    /**
+     * 更新实时电压状态，并异步持久化到当前设备。
+     *
+     * 三态语义（归约见 [resolveDisplayedBatteryVoltage]）：
+     * - 帧未携带电压字段（旧 6 字节固件）：保持既有显示，也不写库；
+     * - 帧携带字段但值无效（哨兵 `0xFFFF` / 超出量程）：清空为 null，界面显示 `--`；
+     * - 帧携带字段且值有效：更新为最新电压。
+     */
+    private fun updateBatteryVoltage(voltage: Float?, reported: Boolean) {
+        _batteryVoltage.value = resolveDisplayedBatteryVoltage(_batteryVoltage.value, voltage, reported)
+        // 未携带电压字段的帧没有电压信息可写库（既有约定）。
+        if (!reported) return
         val address = deviceAddress.value ?: _viewingDeviceAddress.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -856,7 +875,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _temperature.value = realtimeData.temperature
                         _humidity.value = realtimeData.humidity
                         _pressure.value = realtimeData.pressure
-                        updateBatteryVoltage(realtimeData.batteryVoltage)
+                        updateBatteryVoltage(realtimeData.batteryVoltage, realtimeData.batteryVoltageReported)
                         _lastUpdateTime.value = System.currentTimeMillis()
                         
                         val tempStr = realtimeData.temperature?.let { String.format("%.2f", it) } ?: "N/A"
@@ -1170,7 +1189,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     _temperature.value = realtimeData.temperature
                                     _humidity.value = realtimeData.humidity
                                     _pressure.value = realtimeData.pressure
-                                    updateBatteryVoltage(realtimeData.batteryVoltage)
+                                    updateBatteryVoltage(realtimeData.batteryVoltage, realtimeData.batteryVoltageReported)
                                     _lastUpdateTime.value = System.currentTimeMillis()
                                 }
                             }
@@ -1307,7 +1326,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
-     * 读取采集间隔
+     * 读取历史记录间隔
+     *
+     * 注意：固件 v3 起 12340021 的语义是"历史记录落盘间隔"，实时采样固定 1 秒。
+     * 旧固件（v2 及更早）该值表示"采集间隔"，采样与落盘共用周期。
      */
     fun readInterval() {
         viewModelScope.launch {
@@ -1317,26 +1339,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
                         val interval = buffer.short.toInt() and 0xFFFF
                         _interval.value = interval
-                        addLog("读取采集间隔: ${interval}秒", LogType.SUCCESS)
+                        val label = if (_deviceStatus.value?.supportsHistoryInterval == true)
+                            "历史记录间隔" else "采集间隔"
+                        addLog("读取${label}: ${interval}秒", LogType.SUCCESS)
                     } else {
-                        addLog("读取采集间隔失败: 数据无效", LogType.ERROR)
+                        addLog("读取历史记录间隔失败: 数据无效", LogType.ERROR)
                     }
                 }
             } catch (e: Exception) {
-                addLog("读取采集间隔失败: ${e.message}", LogType.ERROR)
+                addLog("读取历史记录间隔失败: ${e.message}", LogType.ERROR)
             }
         }
     }
     
     /**
-     * 设置采集间隔
+     * 设置历史记录间隔（固件侧范围 60-3600 秒；下限是容量红线，低于 60 秒无法保证 30 天保留）
      */
     fun setInterval(interval: Int) {
         viewModelScope.launch {
             try {
-                if (interval < 10 || interval > 3600) {
-                    addLog("采集间隔必须在 10-3600 秒之间", LogType.ERROR)
-                    showSnackbar("采集间隔必须在 10-3600 秒之间", SnackbarType.ERROR)
+                if (interval < BleConstants.HISTORY_INTERVAL_MIN || interval > BleConstants.HISTORY_INTERVAL_MAX) {
+                    val msg = "历史记录间隔必须在 ${BleConstants.HISTORY_INTERVAL_MIN}-${BleConstants.HISTORY_INTERVAL_MAX} 秒之间"
+                    addLog(msg, LogType.ERROR)
+                    showSnackbar(msg, SnackbarType.ERROR)
                     return@launch
                 }
                 
@@ -1346,15 +1371,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 
                 if (success) {
                     _interval.value = interval
-                    addLog("设置采集间隔: ${interval}秒", LogType.SUCCESS)
-                    showSnackbar("采集间隔已设置为 ${interval}秒", SnackbarType.SUCCESS)
+                    val retention = BleConstants.estimateRetentionDays(interval)
+                    addLog("设置历史记录间隔: ${interval}秒（约可保留 ${retention} 天）", LogType.SUCCESS)
+                    showSnackbar("历史记录间隔已设置为 ${interval}秒，约可保留 ${retention} 天", SnackbarType.SUCCESS)
                 } else {
-                    addLog("设置采集间隔失败", LogType.ERROR)
-                    showSnackbar("设置采集间隔失败", SnackbarType.ERROR)
+                    addLog("设置历史记录间隔失败", LogType.ERROR)
+                    showSnackbar("设置历史记录间隔失败", SnackbarType.ERROR)
                 }
             } catch (e: Exception) {
-                addLog("设置采集间隔失败: ${e.message}", LogType.ERROR)
-                showSnackbar("设置采集间隔失败: ${e.message}", SnackbarType.ERROR)
+                addLog("设置历史记录间隔失败: ${e.message}", LogType.ERROR)
+                showSnackbar("设置历史记录间隔失败: ${e.message}", SnackbarType.ERROR)
             }
         }
     }
@@ -2498,124 +2524,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     // ==================== WAPS 天气预警 ====================
-    
+    // 采样循环已提取到 WapsMonitor（data/weather），这里只负责随连接生命周期启停。
+
     private fun stopWaps() {
-        wapsJob?.cancel()
-        wapsJob = null
+        wapsMonitor.stop()
     }
-    
+
     private fun startWaps() {
-        stopWaps()
-        wapsJob = viewModelScope.launch {
-            val intervalMs = 1000L
-            var lastGpsTime = 0L
-            var lastMinuteTime = 0L
-            val minuteMs = 60 * 1000L
-            while (currentCoroutineContext().isActive) {
-                delay(intervalMs)
-                if (!_weatherAlertEnabled.value) break
-                if (connectionState.value != BleManager.ConnectionState.ServicesDiscovered) break
-                val press = _pressure.value
-                if (press == null || press <= 0f) continue  // 无气压或气压为 0（故障）不参与 WAPS 计算
-                val temp = _temperature.value
-                val now = System.currentTimeMillis()
-                // 每 1 秒：气压入缓冲
-                wapsBuffer.addPressure(PressureSample(now, press, temp))
-                // 每 10 秒：GPS 入缓冲（GPS 丢失时保持上一状态，不清锚点）
-                if (now - lastGpsTime >= GPS_SAMPLE_INTERVAL_MS) {
-                    lastGpsTime = now
-                    val loc = if (_hasLocationPermission.value) {
-                        locationManager.getCachedLocation() ?: locationManager.getCurrentLocation(5000)
-                    } else null
-                    loc?.let {
-                        val altM = it.altitude.toDouble()
-                        _lastGpsAltitudeMeters.value = altM
-                        wapsBuffer.addGps(GpsSample(
-                            it.latitude,
-                            it.longitude,
-                            altM,
-                            now
-                        ))
-                    }
-                }
-                // 每 1 分钟：中值滤波、静止/移动（10m 进入 20m 退出）、锚点预热、EHR 计算
-                if (now - lastMinuteTime >= minuteMs) {
-                    lastMinuteTime = now
-                    val samples = wapsBuffer.getPressureSamplesForMedian()
-                    medianFilterPressure(samples)?.let { smoothed ->
-                        wapsBuffer.setSmoothedPressure(smoothed)
-                    }
-                    val gpsList = wapsBuffer.getGpsSamplesLast5Min()
-                    val smoothedP = wapsBuffer.lastSmoothedPressure?.pressureHpa
-                    val lastGps = gpsList.lastOrNull()
-                    // 退出静止：相对参考点位移 ≥ 20m 则清锚点
-                    val refLat = wapsBuffer.stationaryRefLat
-                    val refLon = wapsBuffer.stationaryRefLon
-                    if (refLat != null && refLon != null && lastGps != null &&
-                        shouldExitStationary(refLat, refLon, lastGps)) {
-                        wapsBuffer.clearStationaryAnchor()
-                        wapsBuffer.lockedAltitudeM = null
-                    }
-                    val inStationaryZone = isInStationaryZoneByDisplacement(gpsList)
-                    val state: WapsState
-                    val ehr: Float?
-                    val durationMin: Float?
-                    val alert: AlertLevel
-                    val message: String
-                    if (inStationaryZone && gpsList.isNotEmpty()) {
-                        state = WapsState.Stationary
-                        val first = gpsList.first()
-                        if (wapsBuffer.stationaryRefLat == null) {
-                            wapsBuffer.setStationaryReference(first.latitude, first.longitude, first.timestampMs)
-                        }
-                        smoothedP?.let { wapsBuffer.addWarmupPressure(it) }
-                        wapsBuffer.tryLockAnchor(now)
-                        if (lastGps != null) wapsBuffer.lockedAltitudeM = lastGps.altitudeMeters
-                        if (wapsBuffer.isAnchorLocked()) {
-                            val anchorP = wapsBuffer.stationaryAnchorP!!
-                            val anchorTime = wapsBuffer.stationaryAnchorTimeMs!!
-                            durationMin = (now - anchorTime) / 60_000f
-                            ehr = computeEhr(anchorP, smoothedP ?: anchorP, durationMin)
-                            val pair = decideAlertByEhr(durationMin, ehr)
-                            alert = pair.first
-                            message = pair.second
-                            if (alert == AlertLevel.FlashStorm) {
-                                val app = getApplication<Application>()
-                                showStormWarningNotification(app, message)
-                            }
-                        } else {
-                            ehr = null
-                            durationMin = (wapsBuffer.stationaryRefTimeMs?.let { (now - it) / 60_000f })
-                            alert = AlertLevel.None
-                            message = "监测中（静止 1–2 分钟后显示趋势）"
-                        }
-                    } else {
-                        state = WapsState.Active
-                        if (!inStationaryZone) wapsBuffer.clearStationaryAnchor()
-                        wapsBuffer.lockedAltitudeM = null
-                        ehr = null
-                        durationMin = null
-                        alert = AlertLevel.None
-                        message = "移动中，使用高度计模式"
-                    }
-                    val alt = if (state == WapsState.Stationary) wapsBuffer.lockedAltitudeM
-                    else lastGps?.altitudeMeters
-                    val mslp = if (smoothedP != null && alt != null) {
-                        pressureToSeaLevel(smoothedP, alt, temp)
-                    } else null
-                    _wapsResult.value = WapsResult(
-                        state = state,
-                        mslpHpa = mslp,
-                        deltaP3hHpa = null,
-                        alert = alert,
-                        message = message,
-                        isDataCollecting = state == WapsState.Stationary && !wapsBuffer.isAnchorLocked(),
-                        ehrHpaPerHour = ehr,
-                        stationaryDurationMin = durationMin
-                    )
-                }
-            }
-        }
+        wapsMonitor.start(viewModelScope)
     }
     
     // ==================== 定时数据记录功能 ====================

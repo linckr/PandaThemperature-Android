@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.pandatemperature.data.bluetooth.BleConstants
 import com.example.pandatemperature.data.bluetooth.BleManager
 import com.example.pandatemperature.data.model.DeviceStatus
 import androidx.compose.animation.core.*
@@ -97,19 +98,32 @@ fun ConfigCard(
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // 采集间隔
+                // 历史记录间隔（固件 v3 起采样固定 1 秒，此处为落盘周期）
                 InfoRow(
-                    label = "采集间隔",
+                    label = if (deviceStatus?.supportsHistoryInterval == true)
+                        "历史记录间隔" else "采集间隔",
                     value = currentInterval?.let { "${it}秒" } ?: "--",
                     highlight = true
                 )
                 
-                // 固件版本
-                deviceStatus?.firmwareVersion?.let { version ->
+                // 预计保留时长（固件 v3 起上报；旧固件按上限估算）
+                val retentionDays = deviceStatus?.retentionDays
+                    ?: currentInterval?.let { BleConstants.estimateRetentionDays(it) }
+                retentionDays?.let {
                     InfoRow(
-                        label = "固件版本",
-                        value = formatFirmwareVersion(version)
+                        label = "预计保留",
+                        value = "约 ${it} 天"
                     )
+                }
+                
+                // 固件版本（新固件版本号语义为 patch 号，用能力字节区分，见 DeviceStatus）
+                deviceStatus?.let { status ->
+                    if (status.firmwareVersion > 0) {
+                        InfoRow(
+                            label = "固件版本",
+                            value = status.firmwareVersionLabel
+                        )
+                    }
                 }
                 
                 // 存储记录数
@@ -194,14 +208,4 @@ private fun InfoRow(
             }
         )
     }
-}
-
-/**
- * 格式化固件版本号
- * 例如: 12 -> "v1.2"
- */
-private fun formatFirmwareVersion(version: Int): String {
-    val major = version / 10
-    val minor = version % 10
-    return "v$major.$minor"
 }

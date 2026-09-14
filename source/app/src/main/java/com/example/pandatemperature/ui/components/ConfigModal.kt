@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.pandatemperature.data.bluetooth.BleConstants
 import com.example.pandatemperature.data.model.DeviceStatus
 
 /**
@@ -39,7 +40,7 @@ fun ConfigModal(
     onResetMaxMinTemp: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
-    var intervalInput by remember { mutableStateOf(currentInterval?.toString() ?: "30") }
+    var intervalInput by remember { mutableStateOf(currentInterval?.toString() ?: "60") }
     var nicknameInput by remember { mutableStateOf(currentNickname ?: "") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
@@ -63,11 +64,12 @@ fun ConfigModal(
             interval == null -> {
                 errorMessage = "请输入有效的数字"
             }
-            interval < 10 -> {
-                errorMessage = "采集间隔不能小于10秒"
+            interval < BleConstants.HISTORY_INTERVAL_MIN -> {
+                // 下限 60 秒是固件的容量红线：65000×60s ≈ 45 天，低于它无法保证 30 天保留
+                errorMessage = "历史记录间隔不能小于${BleConstants.HISTORY_INTERVAL_MIN}秒（否则无法保证30天保留）"
             }
-            interval > 3600 -> {
-                errorMessage = "采集间隔不能大于3600秒"
+            interval > BleConstants.HISTORY_INTERVAL_MAX -> {
+                errorMessage = "历史记录间隔不能大于${BleConstants.HISTORY_INTERVAL_MAX}秒"
             }
             else -> {
                 errorMessage = null
@@ -115,7 +117,7 @@ fun ConfigModal(
                         // 固件版本
                         InfoItem(
                             label = "固件版本",
-                            value = deviceStatus?.let { formatFirmwareVersion(it.firmwareVersion) } ?: "--"
+                            value = deviceStatus?.firmwareVersionLabel ?: "--"
                         )
                         // 电池电压（打开弹窗时快照）
                         InfoItem(
@@ -168,9 +170,10 @@ fun ConfigModal(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                 )
                 
-                // === 采集间隔设置 ===
+                // === 历史记录间隔设置 ===
+                // 固件 v3 起采样与落盘解耦：实时采样固定 1 秒，此处配置的是**历史记录落盘周期**。
                 Text(
-                    text = "采集间隔",
+                    text = "历史记录间隔",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold
@@ -182,7 +185,12 @@ fun ConfigModal(
                         intervalInput = it
                         errorMessage = null
                     },
-                    label = { Text("秒 (10-3600)", style = MaterialTheme.typography.bodySmall) },
+                    label = {
+                        Text(
+                            "秒 (${BleConstants.HISTORY_INTERVAL_MIN}-${BleConstants.HISTORY_INTERVAL_MAX})",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier
@@ -193,6 +201,23 @@ fun ConfigModal(
                     supportingText = errorMessage?.let { 
                         { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     }
+                )
+                
+                // 实时采样固定 1 秒 + 按间隔估算的保留时长
+                val retentionDays = intervalInput.toIntOrNull()
+                    ?.takeIf { it >= BleConstants.HISTORY_INTERVAL_MIN }
+                    ?.let { BleConstants.estimateRetentionDays(it) }
+                Text(
+                    text = buildString {
+                        append("实时采样固定 1 秒（用于实时显示与最高最低温度）")
+                        if (retentionDays != null) {
+                            append("\n按此间隔约可保留 ")
+                            append(retentionDays)
+                            append(" 天（承诺 30 天）")
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
                 HorizontalDivider(
@@ -398,66 +423,4 @@ private fun CompactActionButton(
     }
 }
 
-/**
- * 操作按钮组件
- */
-@Composable
-private fun ActionButton(
-    icon: ImageVector,
-    text: String,
-    description: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    isDestructive: Boolean = false
-) {
-    val contentColor = if (isDestructive) {
-        MaterialTheme.colorScheme.error
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    
-    OutlinedButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = contentColor
-        )
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = if (enabled) contentColor else MaterialTheme.colorScheme.outline
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp
-                )
-            }
-        }
-    }
-}
 
-/**
- * 格式化固件版本号
- */
-private fun formatFirmwareVersion(version: Int): String {
-    val major = version / 10
-    val minor = version % 10
-    return "v$major.$minor"
-}

@@ -7,7 +7,6 @@ import com.example.pandatemperature.data.device.model.SensorData
 import com.example.pandatemperature.data.device.profile.thermometer.ThermometerProfile
 import com.example.pandatemperature.data.device.profile.thermometer.ThermometerV1Profile
 import com.example.pandatemperature.data.device.profile.thermometer.ThermometerV2Profile
-import com.example.pandatemperature.data.device.profile.thermometer.ThermometerV3Profile
 
 /**
  * 设备配置工厂
@@ -37,7 +36,20 @@ object DeviceProfileFactory {
     
     /**
      * 创建温度计配置（专用方法）
-     * @param firmwareVersion 固件版本号
+     *
+     * ⚠️ 历史记录长度**只按固件是否提供合并实时数据能力显式选择**，绝不按数据包长度猜测。
+     *
+     * 为什么不再用「固件版本号 >= 3 ⇒ 14 字节 V3」的启发式：
+     * - 旧固件的版本号是主/次版本编码（例如 12 表示 v1.2、2 表示 v2）；
+     * - 新固件（1.0.6+0 起）在状态帧里上报的是 **patch 号**（例如 6 表示 1.0.6）；
+     * - 两者混用同一位段，`>= 3` 会把新固件的 patch=6 误判成「14 字节 V3 历史」，
+     *   导致历史记录按错误长度切分、全部错位。现场固件的历史记录**始终是 12 字节 V2**。
+     *
+     * 因此这里只区分两条显式路径：老 ESS 固件（8 字节 V1）与合并实时数据固件（12 字节 V2）。
+     * `ThermometerV3Profile` / `HistoryRecordFormat.V3` 仅作为「电压预留能力」保留，
+     * 未来只有在固件**显式提供**「历史含电压」能力标志时才可接入，禁止再用版本号推断。
+     *
+     * @param firmwareVersion 固件版本号（新固件为 patch 号）
      * @param availableServiceUuids 可用服务 UUID
      * @return 温度计配置
      */
@@ -45,23 +57,17 @@ object DeviceProfileFactory {
         firmwareVersion: Int?,
         availableServiceUuids: Set<String> = emptySet()
     ): ThermometerProfile {
-        // 判断是否为新固件：
-        // 1. 有固件版本号且 > 0
-        // 2. 支持实时数据服务
-        val isNewFirmware = (firmwareVersion != null && firmwareVersion > 0) ||
-                availableServiceUuids.contains(BleConstants.REALTIME_DATA_SERVICE)
-        
-        // 旧固件状态字段沿用两位整数表示 v1.2（12）；将其归一化为主版本后，
-        // 既能按需求识别 v3+，也不会把现有 v1.x/v2.x 设备误判成 v3。
-        val majorVersion = firmwareVersion?.let { if (it >= 10) it / 10 else it }
+        // 合并实时数据固件：有有效版本号，或设备直接暴露了实时数据服务。
+        val hasRealtimeDataService = availableServiceUuids.contains(BleConstants.REALTIME_DATA_SERVICE)
+        val hasValidVersion = firmwareVersion != null && firmwareVersion > 0
+        val isCombinedRealtimeFirmware = hasValidVersion || hasRealtimeDataService
 
-        return when {
-            majorVersion != null && majorVersion >= 3 ->
-                ThermometerV3Profile(firmwareVersion ?: 3)
-            isNewFirmware ->
-                ThermometerV2Profile(firmwareVersion ?: 0)
-            else ->
-                ThermometerV1Profile()
+        return if (isCombinedRealtimeFirmware) {
+            // 12 字节历史（V2），含气压、不含电压。旧固件与 1.0.6+0 新固件同属此路径。
+            ThermometerV2Profile(firmwareVersion ?: 0)
+        } else {
+            // 老 ESS 固件：8 字节历史（V1），分开读取温度/湿度。
+            ThermometerV1Profile()
         }
     }
     

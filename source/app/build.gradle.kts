@@ -23,6 +23,21 @@ val keystoreProperties = Properties().apply {
 }
 val hasReleaseSigning = keystorePropertiesFile.exists()
 
+/**
+ * OTA 授权密钥从仓库根目录的 ota.properties 读取，再经 BuildConfig 注入代码。
+ * 该文件已被 .gitignore 排除：密钥属凭据，不入库、不进 src.zip。
+ *
+ * 未提供时注入空串——App 构建照常成功，只是 OTA 授权密钥输入框不预填
+ * （固件侧缺密钥会直接编译失败，两侧行为刻意不同：固件没有密钥就是不可用状态）。
+ */
+val otaPropertiesFile = rootProject.file("ota.properties")
+val otaProperties = Properties().apply {
+    if (otaPropertiesFile.exists()) {
+        otaPropertiesFile.inputStream().use { load(it) }
+    }
+}
+val otaDefaultAuthKey = otaProperties.getProperty("authKey", "").trim()
+
 android {
     namespace = "com.example.pandatemperature"
     compileSdk {
@@ -37,6 +52,10 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // OTA 授权密钥（凭据）：来自 ota.properties，未配置时为空串。
+        // 代码侧见 OtaConstants.DEFAULT_AUTH_KEY。
+        buildConfigField("String", "OTA_DEFAULT_AUTH_KEY", "\"$otaDefaultAuthKey\"")
     }
 
     signingConfigs {
@@ -72,6 +91,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // 用于注入 OTA 授权密钥（见 defaultConfig.buildConfigField）
+        buildConfig = true
     }
 }
 

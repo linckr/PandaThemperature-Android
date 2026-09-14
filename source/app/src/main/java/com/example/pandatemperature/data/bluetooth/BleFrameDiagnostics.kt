@@ -1,5 +1,6 @@
 package com.example.pandatemperature.data.bluetooth
 
+import com.example.pandatemperature.data.device.parser.RealtimeDataParserV2
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -47,8 +48,19 @@ object BleFrameDiagnostics {
 
         val voltageState = when {
             voltageOffset == null -> "该协议版本无电压字段"
-            data.size >= voltageOffset + VOLTAGE_FIELD_SIZE ->
-                "含电压字段（offset=$voltageOffset）"
+            data.size >= voltageOffset + VOLTAGE_FIELD_SIZE -> {
+                // 含电压字段时顺带区分有效性：0xFFFF 是固件哨兵，超出量程的读数同样不可能成立。
+                val millivolts = readUint16Le(data, voltageOffset)
+                val outOfRange = millivolts < RealtimeDataParserV2.BATTERY_VOLTAGE_MIN_MV ||
+                    millivolts > RealtimeDataParserV2.BATTERY_VOLTAGE_MAX_MV
+                when {
+                    millivolts == RealtimeDataParserV2.BATTERY_VOLTAGE_INVALID_MV ->
+                        "含电压字段但值为无效哨兵 0xFFFF（offset=$voltageOffset）"
+                    outOfRange ->
+                        "含电压字段但值 ${millivolts}mV 超出量程（offset=$voltageOffset）"
+                    else -> "含电压字段（offset=$voltageOffset）"
+                }
+            }
             else -> "不含电压字段，长度未达 ${voltageOffset + VOLTAGE_FIELD_SIZE}B"
         }
         val lengthNote = if (data.size < minLength) "，长度小于协议最小 ${minLength}B" else ""
@@ -104,4 +116,8 @@ object BleFrameDiagnostics {
         val shown = data.take(MAX_PREVIEW_BYTES).joinToString(" ") { "%02X".format(it) }
         return if (data.size > MAX_PREVIEW_BYTES) "$shown …（共 ${data.size}B）" else shown
     }
+
+    /** 读取小端 uint16。仅用于诊断文案的哨兵值判定，不参与解析。 */
+    private fun readUint16Le(data: ByteArray, offset: Int): Int =
+        (data[offset].toInt() and 0xFF) or ((data[offset + 1].toInt() and 0xFF) shl 8)
 }

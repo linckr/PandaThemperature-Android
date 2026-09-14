@@ -22,3 +22,6 @@ build/
 keystore.properties
 *.jks
 *.keystore
+
+# 构建期注入的 OTA 授权密钥：绝不入库、绝不进源码压缩包
+ota.properties

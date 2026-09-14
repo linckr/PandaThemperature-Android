@@ -65,6 +65,12 @@ class BleManager private constructor(private val context: Context) {
     private var resetMaxMinTempCharacteristic: BluetoothGattCharacteristic? = null
     private var batteryCharacteristic: BluetoothGattCharacteristic? = null
     private var clearDataCharacteristic: BluetoothGattCharacteristic? = null  // ⭐ v1.2 新增：清空数据特征
+
+    // ⭐ BLE OTA（固件 1.0.6+0 新增）：自定义升级服务 1234005x
+    private var otaService: BluetoothGattService? = null
+    private var otaControlCharacteristic: BluetoothGattCharacteristic? = null
+    private var otaDataCharacteristic: BluetoothGattCharacteristic? = null
+    private var otaStatusCharacteristic: BluetoothGattCharacteristic? = null
     
     // 状态流
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -163,6 +169,16 @@ class BleManager private constructor(private val context: Context) {
             notificationCallbacks[characteristic.uuid]?.invoke(value ?: ByteArray(0))
         }
         
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            // 修复：此前 requestMtu 只保存了回调，却没有任何 GATT 回调触发它，
+            // 导致 MTU 请求永远等不到结果。BLE OTA 的 START 报文（61B）依赖协商 MTU。
+            val success = status == BluetoothGatt.GATT_SUCCESS
+            Log.d(TAG, "MTU 变更: $mtu, 状态: $status")
+            val callback = mtuCallback
+            mtuCallback = null
+            callback?.invoke(success, mtu)
+        }
+
         override fun onDescriptorWrite(
             gatt: BluetoothGatt,
             descriptor: BluetoothGattDescriptor,
@@ -358,11 +374,13 @@ class BleManager private constructor(private val context: Context) {
         val configServiceUuid = UUID.fromString(BleConstants.CONFIG_SERVICE)
         val realtimeDataServiceUuid = UUID.fromString(BleConstants.REALTIME_DATA_SERVICE)  // ⭐ v1.1 新增
         val clearDataServiceUuid = UUID.fromString(BleConstants.CLEAR_DATA_SERVICE)  // ⭐ v1.2 新增
+        val otaServiceUuid = UUID.fromString(BleConstants.OTA_SERVICE)  // ⭐ BLE OTA 新增
         
         essService = gatt.getService(essServiceUuid)
         configService = gatt.getService(configServiceUuid)
         realtimeDataService = gatt.getService(realtimeDataServiceUuid)  // ⭐ v1.1 新增
         clearDataService = gatt.getService(clearDataServiceUuid)  // ⭐ v1.2 新增
+        otaService = gatt.getService(otaServiceUuid)  // ⭐ BLE OTA 新增
         
         essService?.let { service ->
             tempCharacteristic = service.getCharacteristic(UUID.fromString(BleConstants.TEMP_CHAR))
@@ -386,6 +404,12 @@ class BleManager private constructor(private val context: Context) {
         
         clearDataService?.let { service ->  // ⭐ v1.2 新增
             clearDataCharacteristic = service.getCharacteristic(UUID.fromString(BleConstants.CLEAR_DATA_CHAR))
+        }
+        
+        otaService?.let { service ->  // ⭐ BLE OTA 新增
+            otaControlCharacteristic = service.getCharacteristic(UUID.fromString(BleConstants.OTA_CONTROL_CHAR))
+            otaDataCharacteristic = service.getCharacteristic(UUID.fromString(BleConstants.OTA_DATA_CHAR))
+            otaStatusCharacteristic = service.getCharacteristic(UUID.fromString(BleConstants.OTA_STATUS_CHAR))
         }
         
         Log.d(TAG, "服务和特征已缓存")
@@ -619,12 +643,16 @@ class BleManager private constructor(private val context: Context) {
             BleConstants.RESET_MAX_MIN_TEMP_CHAR -> resetMaxMinTempCharacteristic
             BleConstants.BATTERY_CHAR -> batteryCharacteristic
             BleConstants.CLEAR_DATA_CHAR -> clearDataCharacteristic  // ⭐ v1.2 新增
+            BleConstants.OTA_CONTROL_CHAR -> otaControlCharacteristic  // ⭐ BLE OTA 新增
+            BleConstants.OTA_DATA_CHAR -> otaDataCharacteristic  // ⭐ BLE OTA 新增
+            BleConstants.OTA_STATUS_CHAR -> otaStatusCharacteristic  // ⭐ BLE OTA 新增
             else -> {
                 // 尝试从服务中查找
                 realtimeDataService?.getCharacteristic(uuidObj)  // ⭐ v1.1 新增：优先从实时数据服务查找
                     ?: essService?.getCharacteristic(uuidObj)
                     ?: configService?.getCharacteristic(uuidObj)
                     ?: clearDataService?.getCharacteristic(uuidObj)  // ⭐ v1.2 新增
+                    ?: otaService?.getCharacteristic(uuidObj)  // ⭐ BLE OTA 新增
             }
         }
     }
@@ -651,6 +679,10 @@ class BleManager private constructor(private val context: Context) {
         resetMaxMinTempCharacteristic = null
         batteryCharacteristic = null
         clearDataCharacteristic = null  // ⭐ v1.2 新增
+        otaService = null  // ⭐ BLE OTA 新增
+        otaControlCharacteristic = null
+        otaDataCharacteristic = null
+        otaStatusCharacteristic = null
         readCallbacks.clear()
         writeCallbacks.clear()
         descriptorWriteCallbacks.clear()

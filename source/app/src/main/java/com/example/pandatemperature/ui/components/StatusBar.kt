@@ -43,7 +43,12 @@ fun StatusBar(
     taskStatus: TaskStatus? = null,
     batteryVoltage: Float? = null,
     batteryPercent: Float? = null,
-    firmwareVersion: Int? = null,
+    /**
+     * 固件版本显示文案（如 `v6` / `v1.2`）或 null。
+     * 口径与配置弹窗、配置卡片一致（见 DeviceStatus.firmwareVersionLabel）：
+     * 新固件版本号是 patch 号，旧固件是主/次版本编码，由能力字节区分。
+     */
+    firmwareVersionLabel: String? = null,
     onClick: () -> Unit,
     onConfigClick: () -> Unit = {}, // 新增配置点击回调
     modifier: Modifier = Modifier
@@ -147,10 +152,11 @@ fun StatusBar(
                             fontSize = 14.sp
                         )
                         
-                        // 显示固件版本号
-                        if (isConnected && firmwareVersion != null && firmwareVersion > 0) {
+                        // 显示固件版本号（口径同配置弹窗/配置卡片；无版本号时不占位）
+                        val versionTag = firmwareVersionLabel?.takeIf { it.isNotBlank() && it != "--" }
+                        if (isConnected && versionTag != null) {
                             Text(
-                                text = "(v$firmwareVersion)",
+                                text = "($versionTag)",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Normal,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),

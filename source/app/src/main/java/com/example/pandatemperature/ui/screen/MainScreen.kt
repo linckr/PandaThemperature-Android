@@ -265,7 +265,7 @@ fun MainScreen(
                                 connectionState = connectionState,
                                 deviceName = displayDeviceName,
                                 taskStatus = taskStatus,
-                                firmwareVersion = deviceStatus?.firmwareVersion,
+                                firmwareVersionLabel = deviceStatus?.firmwareVersionLabel,
                                 temperature = temperature,
                                 humidity = humidity,
                                 pressure = pressure,  // ⭐ v1.1 新增
@@ -510,7 +510,8 @@ private fun HomeScreen(
     connectionState: BleManager.ConnectionState,
     deviceName: String?,
     taskStatus: TaskStatus?,
-    firmwareVersion: Int? = null,
+    /** 固件版本显示文案（与配置弹窗/配置卡片同一口径，见 DeviceStatus.firmwareVersionLabel） */
+    firmwareVersionLabel: String? = null,
     temperature: Float?,
     humidity: Float?,
     pressure: Float? = null,  // ⭐ v1.1 新增：气压
@@ -607,7 +608,7 @@ private fun HomeScreen(
                 taskStatus = taskStatus,
                 batteryVoltage = batteryVoltage,
                 batteryPercent = batteryPercent,
-                firmwareVersion = firmwareVersion,
+                firmwareVersionLabel = firmwareVersionLabel,
                 onClick = {
                     if (connectionState == BleManager.ConnectionState.Disconnected) {
                         onDeviceSelect()

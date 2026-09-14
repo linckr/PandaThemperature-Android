@@ -19,6 +19,16 @@ data class ThermometerData(
      * 未来实时协议在现有 6 字节后追加 uint16 小端毫伏值。
      */
     val batteryVoltage: Float? = null,
+
+    /**
+     * 本帧是否携带了电压字段。
+     *
+     * 用于区分两种「[batteryVoltage] 为 null」：
+     * - `false`：旧 6 字节固件根本没有电压能力，上层应保持既有显示、不要清掉；
+     * - `true`：新 8 字节固件上报了电压字段但值无效（哨兵 `0xFFFF` 或超出量程），
+     *   表示设备当前没有有效电压，上层应清为 null 让界面显示 `--`。
+     */
+    val batteryVoltageReported: Boolean = false,
     
     /** 数据获取时间戳（毫秒） */
     override val timestamp: Long = System.currentTimeMillis()
