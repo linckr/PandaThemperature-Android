@@ -25,3 +25,9 @@ keystore.properties
 
 # 构建期注入的 OTA 授权密钥：绝不入库、绝不进源码压缩包
 ota.properties
+
+# 本地私有配置 / 凭据（当前工程未使用，留作防误提交）
+.env
+*.env
+secrets.properties
+google-services.json
