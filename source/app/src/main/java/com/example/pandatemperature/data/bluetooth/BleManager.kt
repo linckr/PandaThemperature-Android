@@ -63,7 +63,6 @@ class BleManager private constructor(private val context: Context) {
     private var historyInfoCharacteristic: BluetoothGattCharacteristic? = null
     private var maxMinTempCharacteristic: BluetoothGattCharacteristic? = null
     private var resetMaxMinTempCharacteristic: BluetoothGattCharacteristic? = null
-    private var batteryCharacteristic: BluetoothGattCharacteristic? = null
     private var clearDataCharacteristic: BluetoothGattCharacteristic? = null  // ⭐ v1.2 新增：清空数据特征
 
     // ⭐ BLE OTA（固件 1.0.6+0 新增）：自定义升级服务 1234005x
@@ -399,7 +398,6 @@ class BleManager private constructor(private val context: Context) {
             historyInfoCharacteristic = service.getCharacteristic(UUID.fromString(BleConstants.HISTORY_INFO_CHAR))
             maxMinTempCharacteristic = service.getCharacteristic(UUID.fromString(BleConstants.MAX_MIN_TEMP_CHAR))
             resetMaxMinTempCharacteristic = service.getCharacteristic(UUID.fromString(BleConstants.RESET_MAX_MIN_TEMP_CHAR))
-            batteryCharacteristic = service.getCharacteristic(UUID.fromString(BleConstants.BATTERY_CHAR))
         }
         
         clearDataService?.let { service ->  // ⭐ v1.2 新增
@@ -641,7 +639,6 @@ class BleManager private constructor(private val context: Context) {
             BleConstants.HISTORY_INFO_CHAR -> historyInfoCharacteristic
             BleConstants.MAX_MIN_TEMP_CHAR -> maxMinTempCharacteristic
             BleConstants.RESET_MAX_MIN_TEMP_CHAR -> resetMaxMinTempCharacteristic
-            BleConstants.BATTERY_CHAR -> batteryCharacteristic
             BleConstants.CLEAR_DATA_CHAR -> clearDataCharacteristic  // ⭐ v1.2 新增
             BleConstants.OTA_CONTROL_CHAR -> otaControlCharacteristic  // ⭐ BLE OTA 新增
             BleConstants.OTA_DATA_CHAR -> otaDataCharacteristic  // ⭐ BLE OTA 新增
@@ -677,7 +674,6 @@ class BleManager private constructor(private val context: Context) {
         historyInfoCharacteristic = null
         maxMinTempCharacteristic = null
         resetMaxMinTempCharacteristic = null
-        batteryCharacteristic = null
         clearDataCharacteristic = null  // ⭐ v1.2 新增
         otaService = null  // ⭐ BLE OTA 新增
         otaControlCharacteristic = null

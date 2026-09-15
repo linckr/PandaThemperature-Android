@@ -52,7 +52,7 @@ object BleConstants {
     // 历史数据特征
     const val HISTORY_CHAR = "12340023-1234-5678-1234-56789abcdef0"
 
-    // 最高最低温度特征（4字节：最高2字节 + 最低2字节，单位0.01°C，可读/可通知）
+    // 最高最低温度特征（12字节：最高温度2 + 最高时间4 + 最低温度2 + 最低时间4，可读/可通知）
     const val MAX_MIN_TEMP_CHAR = "12340024-1234-5678-1234-56789abcdef0"
 
     // 重置最高最低温度特征（可写：写入任意值即可重置，并通知手机）
@@ -61,10 +61,6 @@ object BleConstants {
     // 历史记录信息特征（8字节：总记录数 + 起始扇区 + 起始记录索引）
     // 注意：该 UUID 在早期设计中曾用于电池电量特征，当前固件已将其用于历史信息特征
     const val HISTORY_INFO_CHAR = "12340026-1234-5678-1234-56789abcdef0"
-    
-    // 电池电量特征（2字节，毫伏，可读/可通知）
-    // 当前固件未实现电池电量特性，且 UUID 已被历史信息特征占用，因此 App 侧暂时屏蔽电池功能
-    const val BATTERY_CHAR = "12340026-1234-5678-1234-56789abcdef0"
     
     // Client Characteristic Configuration Descriptor
     const val CCCD_DESCRIPTOR = "00002902-0000-1000-8000-00805f9b34fb"

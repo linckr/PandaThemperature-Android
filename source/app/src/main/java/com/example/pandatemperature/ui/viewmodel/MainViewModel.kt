@@ -675,21 +675,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     addLog("设备不支持最高最低温度特性，已跳过", LogType.INFO)
                 }
                 
-                // 注意：电池电量暂时关闭，因为单片机未实现
-                // 6. 读取电池电量（已禁用）
-                // if (bleManager.isCharacteristicAvailable(BleConstants.BATTERY_CHAR)) {
-                //     readBatteryVoltage()
-                //     kotlinx.coroutines.delay(200)
-                // }
-                
                 // 订阅实时数据
                 setStep("正在订阅实时数据")
                 subscribeRealtimeData()
-                // 注意：电池电量通知暂时关闭，因为单片机未实现
-                // 订阅电池电量（已禁用）
-                // if (bleManager.isCharacteristicAvailable(BleConstants.BATTERY_CHAR)) {
-                //     subscribeBatteryVoltage()
-                // }
                 kotlinx.coroutines.delay(500)
                 
                 // 自动同步历史数据（增量获取）
@@ -1592,20 +1580,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 addLog("订阅设备状态失败: ${e.message}", LogType.ERROR)
             }
         }
-    }
-    
-    /**
-     * 读取电池电量（暂时屏蔽）
-     */
-    fun readBatteryVoltage() {
-        addLog("电池电量功能暂未启用（UUID 已被历史信息特征复用）", LogType.INFO)
-    }
-    
-    /**
-     * 订阅电池电量通知（暂时屏蔽）
-     */
-    fun subscribeBatteryVoltage() {
-        addLog("电池电量通知功能暂未启用（UUID 已被历史信息特征复用）", LogType.INFO)
     }
     
     /**

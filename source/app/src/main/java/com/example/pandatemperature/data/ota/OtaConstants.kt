@@ -67,7 +67,7 @@ object OtaConstants {
      * 写完 START 后等待设备进入 READY 的超时。
      *
      * START 在固件侧是**异步**的（整槽擦除、NVS 续传状态、整镜像 SHA-256 都投递到系统工作队列），
-     * 期间设备持续上报 `state=IDLE, err=0`，可能持续数秒。取值要明显大于一次整槽擦除的时间。
+     * 期间设备可能没有状态通知；客户端必须等待 READY。取值要明显大于一次整槽擦除的时间。
      */
     const val START_READY_TIMEOUT_MS: Long = 15_000L
 

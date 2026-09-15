@@ -219,7 +219,7 @@ $env:JAVA_HOME="C:\Users\linckr\.workbuddy\binaries\jdk\jdk-17.0.20.1+1"
 
 固件把「整槽擦除 / 写 Flash / NVS / 整镜像 SHA-256」从 BLE GATT 回调搬到系统工作队列后：
 
-1. **START 变异步**：写完 START 后设备不会立即 READY，期间持续上报 `state=IDLE, err=0`。
+1. **START 变异步**：写完 START 后设备不会立即 READY，期间可能没有状态通知；客户端必须等待 READY。
    - `OtaRunner` 新增 `readyTimeoutMs`（默认 `OtaConstants.START_READY_TIMEOUT_MS = 15s`），
      START 后**只认 `state == READY`**；超时返回 `Failed(null, "等待设备 READY 超时…")`。
    - **IDLE 且 err=0 绝不等价于"可以发数据"** —— 代码与注释都显式写死这一点。

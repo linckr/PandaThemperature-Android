@@ -147,8 +147,8 @@ App 选择 zephyr.signed.bin
    历史上 `>= 3 ⇒ 14 字节` 的启发式曾把 patch=6 误判成 14 字节，导致历史**全部错位**。
    现在只按"是否有实时数据服务 / 有效版本号"选择 `V1(8)` 或 `V2(12)`。
 2. **实时帧的气压是 0.1 hPa，历史记录的气压是 Pa** —— 单位不同，别混用。
-3. `12340026` 同时被 `HISTORY_INFO_CHAR` 与遗留的 `BATTERY_CHAR` 使用，
-   **实际含义是"历史信息"**；电池电压现在在实时帧的 offset 6。
+3. `12340026` 只表示 `HISTORY_INFO_CHAR`；冲突的旧 `BATTERY_CHAR` 别名已删除，
+   电池电压现在在实时帧的 offset 6。
 4. 时间同步特征 `12340011` **声明在配置服务 `12340020` 内部**，
    没有独立的 `12340010` 服务 —— 不要去找它。
 
@@ -164,3 +164,4 @@ App 选择 zephyr.signed.bin
 - [HARDWARE.md](https://github.com/linckr/NRF52xxx-FieldTemp/blob/main/HARDWARE.md) —— 引脚与 Flash 分区
 - [OTA.md](https://github.com/linckr/NRF52xxx-FieldTemp/blob/main/OTA.md) —— OTA 架构与签名
 - [PROTOCOL.md](https://github.com/linckr/NRF52xxx-FieldTemp/blob/main/PROTOCOL.md) —— **Firmware ↔ Android 接口协议（byte-level）**
+- `source/docs/` —— 按日期保存的历史实施记录；与当前代码冲突时以代码和上述协议文档为准

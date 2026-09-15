@@ -32,7 +32,7 @@ sealed interface OtaResult {
  * → END → 等 VERIFY。之后由调用方决定是否 [triggerUpgrade]（END 不会自动重启）。
  *
  * 注意 START 在固件侧是**异步**的：整槽擦除、NVS 续传状态、整镜像 SHA-256 都已搬出 GATT 回调，
- * 投递到系统工作队列执行，期间设备会持续上报 `state=IDLE, err=0`。
+ * 投递到系统工作队列执行，期间设备可能没有状态通知。
  * **IDLE 且无错误 ≠ 可以发数据**，必须等到 `state == READY` 才开始发 Data（见 [readyTimeoutMs]）。
  *
  * 传输中途若收到 [OtaError.OVERRUN]（设备 512B 环形缓冲 + 双缓冲溢出，保护性中止），
