@@ -22,6 +22,7 @@ class DeviceProfileFactoryTest {
      */
     @Test
     fun firmwarePatchNumberSixMustNotSelectFourteenByteHistory() {
+        assertEquals(12, historyRecordSize(firmwareVersion = 8))
         assertEquals(12, historyRecordSize(firmwareVersion = 6))
         assertEquals(12, historyRecordSize(firmwareVersion = 5))
         assertEquals(12, historyRecordSize(firmwareVersion = 1))

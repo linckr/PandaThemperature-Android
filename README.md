@@ -4,6 +4,8 @@
 
 Gradle 工程位于本仓库的 **`source/`** 子目录（**不是**仓库根）。
 
+统一项目已包含同版本客户端：[NRF52xxx-FieldTemp/android](https://github.com/linckr/NRF52xxx-FieldTemp/tree/main/android)。本仓库保留用于 Android 上游协作；最新修复、真机证据和未验证边界见 [HANDOFF.md](HANDOFF.md)。
+
 ---
 
 ## 这个 App 是做什么的
@@ -25,7 +27,7 @@ Gradle 工程位于本仓库的 **`source/`** 子目录（**不是**仓库根）
 | MCU | nRF52810（192 KiB Flash / 24 KiB RAM） |
 | 外部 Flash | W25Q64（8 MiB SPI NOR） |
 | 固件版本（本文档写作时） | `1.0.8+0` |
-| 与本文档兼容的 App 提交 | `f86f670` |
+| 最新真机联调 | 2026-10-09 本次同步修复，见 [HANDOFF.md](HANDOFF.md)；`f86f670` 为旧基线 |
 
 固件仓库（含全部架构文档）：
 **https://github.com/linckr/NRF52xxx-FieldTemp**
